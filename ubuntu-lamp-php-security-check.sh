@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# php-patchkit 1.00 - https://github.com/Skittel/php-patchkit
+# php-patchkit 1.01 - https://github.com/Skittel/php-patchkit
 # Read-only Ubuntu Apache/nginx inventory for CVE-2026-109618 / CVE-2026-109619.
 # No updates, restarts, configuration changes, network access or web test files.
 # Run as root: bash ubuntu-lamp-php-security-check.sh
@@ -34,7 +34,7 @@ except AttributeError:  # Python 3.6
                                   errors='replace', line_buffering=True)
 FIXES = {(8, 2): 35, (8, 3): 36, (8, 4): 27, (8, 5): 12}
 CVES = ('CVE-2026-109618', 'CVE-2026-109619')
-VERSION = '1.00'
+VERSION = '1.01'
 
 def run(args, timeout=30):
     try:

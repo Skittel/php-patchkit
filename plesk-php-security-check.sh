@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# php-patchkit 1.00 - https://github.com/Skittel/php-patchkit
+# php-patchkit 1.01 - https://github.com/Skittel/php-patchkit
 # Read-only inventory for CVE-2026-109618 and CVE-2026-109619.
 # Requirements: Linux, root, Plesk, Bash, Python >= 3.6. No network requests.
 # Run: bash plesk-php-security-check.sh
@@ -29,7 +29,7 @@ except AttributeError:  # Python 3.6
                                   errors='replace', line_buffering=True)
 FIXES = {(8, 2): 35, (8, 3): 36, (8, 4): 27, (8, 5): 12}
 SOURCE = 'https://www.php.net/archive/2026.php'
-VERSION = '1.00'
+VERSION = '1.01'
 errors = []
 
 def run(args, timeout=90):
