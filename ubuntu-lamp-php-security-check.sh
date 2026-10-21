@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# php-patchkit 1.00 — https://github.com/Skittel/php-patchkit
 # Read-only Ubuntu Apache/nginx inventory for CVE-2026-109618 / CVE-2026-109619.
 # No updates, restarts, configuration changes, network access or web test files.
 # Run as root: bash ubuntu-lamp-php-security-check.sh
@@ -23,6 +24,7 @@ from collections import Counter
 from pathlib import Path
 FIXES = {(8, 2): 35, (8, 3): 36, (8, 4): 27, (8, 5): 12}
 CVES = ('CVE-2026-109618', 'CVE-2026-109619')
+VERSION = '1.00'
 
 def run(args, timeout=30):
     try:
@@ -370,7 +372,7 @@ def main():
         if '=' in line:
             k, v = line.split('=', 1)
             release[k] = v.strip('"')
-    print('Ubuntu Apache/nginx PHP Security Check — read-only')
+    print('Ubuntu Apache/nginx PHP Security Check {} — read-only'.format(VERSION))
     print('Host: {} | Checked at: {}'.format(socket.getfqdn(), datetime.datetime.now().astimezone().isoformat()))
     print('OS: ' + release.get('PRETTY_NAME', '?'))
     print('CVEs: ' + ' / '.join(CVES))

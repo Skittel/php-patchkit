@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# php-patchkit 1.00 — https://github.com/Skittel/php-patchkit
 # Read-only inventory for CVE-2026-109618 and CVE-2026-109619.
 # Requirements: Linux, root, Plesk, Bash, Python >= 3.6. No network requests.
 # Run: bash plesk-php-security-check.sh
@@ -18,6 +19,7 @@ import sys
 from collections import Counter, defaultdict
 FIXES = {(8, 2): 35, (8, 3): 36, (8, 4): 27, (8, 5): 12}
 SOURCE = 'https://www.php.net/archive/2026.php'
+VERSION = '1.00'
 errors = []
 
 def run(args, timeout=90):
@@ -56,7 +58,7 @@ def version_status(v):
     if (major, minor) <= (8, 1):
         return 'OLD / CHECK BACKPORT', 'EOL branch; verify backports for both CVEs'
     return 'UNKNOWN', 'Branch not covered by this version matrix'
-print('Plesk PHP Security Check — read-only')
+print('Plesk PHP Security Check {} — read-only'.format(VERSION))
 print('Host: {} | Checked at: {}'.format(socket.getfqdn(), datetime.datetime.now().astimezone().isoformat()))
 print('CVE-2026-109618 / CVE-2026-109619 | Reference: ' + SOURCE)
 print('Fixed upstream versions: 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12 (2026-10-21)')
