@@ -52,6 +52,25 @@ TuxCare Extended Lifecycle Support or an upgrade. And the panel's own PHP
 **18.0.81 #4**, not by a PHP package. The script checks all three: upstream
 versions, EOL build dates, and the panel.
 
+**Ubuntu without Plesk works the other way round.** Ubuntu backports security
+fixes without touching the upstream version — jammy ships `php8.1` as
+`8.1.2-1ubuntu2.x` indefinitely, so comparing `8.1.2` against `8.1.34` can never
+show a fix, no matter how current the package is. `ubuntu-lamp-php-security-check.sh`
+therefore weighs three signals:
+
+| Signal | Verdict |
+|---|---|
+| Package changelog names the CVE | `PATCHED (BACKPORT)` — the vendor's own record, the only local proof |
+| Upstream version ≥ fixed version | `PATCHED` — applies to Sury/ondrej packages, which carry real upstream versions |
+| Binary built **before** 21 Oct 2026 | `NOT PATCHED` — a certainty: the fix did not exist when this binary was built |
+| Built on or after, nothing else | `REBUILT AFTER FIX / UNCONFIRMED` — plausible, unproven |
+| Neither date nor changelog | `CHECK BACKPORT` — nothing confirmed |
+
+The build date is the asymmetric one: built-before **proves** the fix is absent,
+while built-after only suggests it is present. The script states each case for
+what it is instead of collapsing them into one hopeful "probably fine". Branches
+8.1 and older carry a `/ EOL` suffix even when fixed.
+
 ### Installing the Plesk updates
 
 The rebuilt packages arrive through Plesk's own repository, so the normal

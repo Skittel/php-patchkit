@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# php-patchkit 1.01 - https://github.com/Skittel/php-patchkit
+# php-patchkit 1.12 - https://github.com/Skittel/php-patchkit
 # Read-only Ubuntu Apache/nginx inventory for CVE-2026-109618 / CVE-2026-109619.
 # No updates, restarts, configuration changes, network access or web test files.
 # Run as root: bash ubuntu-lamp-php-security-check.sh
@@ -34,7 +34,14 @@ except AttributeError:  # Python 3.6
                                   errors='replace', line_buffering=True)
 FIXES = {(8, 2): 35, (8, 3): 36, (8, 4): 27, (8, 5): 12}
 CVES = ('CVE-2026-109618', 'CVE-2026-109619')
-VERSION = '1.01'
+# Ubuntu backports security fixes without touching the upstream version: jammy
+# ships php8.1 as 8.1.2-1ubuntu2.x forever, so comparing 8.1.2 against 8.1.34
+# can never show a fix. Two other signals carry real weight. A build date
+# BEFORE the upstream release proves the fix is absent - it did not exist yet.
+# A CVE named in the vendor's own changelog proves it is present. Anything in
+# between stays unconfirmed, and this script says so rather than guessing.
+PHP_FIX_DATE = datetime.date(2026, 10, 21)
+VERSION = '1.12'
 
 def run(args, timeout=30):
     try:
@@ -44,18 +51,72 @@ def run(args, timeout=30):
         return p.returncode, p.stdout, p.stderr.strip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return 2, '', str(e)
-def classify(v):
+def patched(status):
+    # Every status that starts with PATCHED counts as fixed; nothing else does.
+    return status.startswith('PATCHED')
+def build_date(text):
+    # php -v prints: PHP 8.3.36 (cli) (built: Oct 21 2026 08:04:57) (NTS)
+    # The day is space-padded for single digits. LC_ALL=C in run() keeps the
+    # month name English, so %b parses regardless of the server locale.
+    m = re.search(r'\(built:\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})', text)
+    if not m:
+        return None
+    try:
+        return datetime.datetime.strptime(' '.join(m.group(1, 2, 3)), '%b %d %Y').date()
+    except ValueError:
+        return None
+def branch_of(v):
+    m = re.match(r'(\d+)\.(\d+)(?:\.|$|-)', v)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+def classify(v, built=None, cve_confirmed=False):
     # Accept only stable versions in the four explicitly documented branches.
     m = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)(.*)', v)
     if not m or re.search(r'RC|alpha|beta|dev', m.group(4), re.I):
         return 'UNKNOWN'
     a, b, c = map(int, m.group(1, 2, 3))
+    eol = ' / EOL' if (a, b) <= (8, 1) else ''
+    # Strongest evidence first: the vendor's own changelog naming the CVE.
+    if cve_confirmed:
+        return 'PATCHED (BACKPORT)' + eol
+    if (a, b) in FIXES and c >= FIXES[(a, b)]:
+        return 'PATCHED' + eol
+    # A binary built before the upstream release cannot carry the fix. This is
+    # the one negative that is certain rather than merely unconfirmed.
+    if built is not None and built < PHP_FIX_DATE:
+        return 'NOT PATCHED' + eol
+    if built is not None:
+        return 'REBUILT AFTER FIX / UNCONFIRMED' + eol
     if (a, b) in FIXES:
-        return 'PATCHED' if c >= FIXES[(a, b)] else 'BELOW FIX / CHECK BACKPORT'
+        return 'BELOW FIX / CHECK BACKPORT'
     return 'OLD / CHECK BACKPORT' if (a, b) <= (8, 1) else 'UNKNOWN'
 def upstream(package_version):
     # Debian epoch and packaging revision are not upstream PHP patch levels.
     return re.sub(r'^\d+:', '', package_version).split('-', 1)[0]
+def scan_changelogs(warnings):
+    # A CVE named in /usr/share/doc/<pkg>/changelog is the vendor stating that
+    # this package carries the fix - the only local proof of a backport there
+    # is. Returns {branch: [files]} plus the flat list for the report.
+    by_branch, hits = {}, []
+    for filename in sorted(glob.glob('/usr/share/doc/*php*/changelog*')):
+        if not os.path.isfile(filename):
+            continue
+        try:
+            if filename.endswith('.gz'):
+                with gzip.open(filename, 'rt', errors='replace') as stream:
+                    text = stream.read(8 * 1024 * 1024)
+            else:
+                text = Path(filename).read_text(errors='replace')[:8 * 1024 * 1024]
+        except (OSError, EOFError):
+            warnings.append('Unable to read changelog: ' + filename)
+            continue
+        found = [cve for cve in CVES if cve in text]
+        if not found:
+            continue
+        hits.append((filename, found))
+        bm = re.search(r'/doc/[^/]*?php(\d+)\.(\d+)', filename)
+        if bm:
+            by_branch.setdefault((int(bm.group(1)), int(bm.group(2))), []).append(filename)
+    return by_branch, hits
 def table(headers, rows):
     rows = [[str(v).replace('\n', ' ').replace('\r', ' ').replace('\x1b', '?')
              for v in row] for row in rows]
@@ -401,10 +462,11 @@ def main():
         if len(fields) == 4 and fields[2] == 'installed' and 'php' in fields[0].lower():
             name, ver, state, source = fields
             packages.append((name, ver, source))
-    runtimes = [(n, v, s, classify(upstream(v))) for n, v, s in packages if runtime_package(n.split(':')[0])]
-    print('1. INSTALLED PHP RUNTIME PACKAGES')
-    table(['Package', 'Full version', 'Source package', 'Status'], runtimes)
-    print('\n2. PHP BINARIES ON THE FILESYSTEM')
+    cve_by_branch, cve_hits = scan_changelogs(warnings)
+    # The binaries are inspected before the package table is printed: their
+    # build dates are the evidence the package table lacks, since a package has
+    # no version banner of its own to interrogate. Binaries of a branch come
+    # from that branch's source package, so the date carries over.
     candidates = set()
     for pat in ['/usr/bin/php', '/usr/bin/php[0-9]*', '/usr/bin/php-cgi*',
                 '/usr/sbin/php-fpm*', '/usr/local/bin/php', '/usr/local/bin/php-cgi',
@@ -413,7 +475,7 @@ def main():
         candidates.update(glob.glob(pat))
     if shutil.which('php'):
         candidates.add(shutil.which('php'))
-    binaries, seen = [], set()
+    binaries, seen, branch_built = [], set(), {}
     for path in sorted(candidates):
         # Excludes phpize, php-config, phpdbg and arbitrary extension files.
         if not re.fullmatch(r'php(?:\d+\.\d+)?|php-cgi(?:\d+\.\d+)?|php-fpm(?:\d+\.\d+)?', os.path.basename(path)):
@@ -425,10 +487,33 @@ def main():
         rc, text, err = run([real, '-n', '-v'], timeout=10)
         m = re.search(r'^PHP\s+(\d+\.\d+\.\d+\S*)', text, re.M)
         version = m.group(1) if rc == 0 and m else '?'
-        binaries.append((real, version, classify(version)))
+        built = build_date(text) if rc == 0 else None
+        bran = branch_of(version)
+        if bran and built and branch_built.get(bran, datetime.date.min) < built:
+            branch_built[bran] = built
+        binaries.append((real, version, built, bran,
+                         classify(version, built, bran in cve_by_branch)))
         if version == '?':
             errors.append('Unable to inspect binary: {} ({})'.format(real, err or 'no version output'))
-    table(['Binary (symlinks resolved)', 'Version', 'Status'], binaries)
+    runtimes = []
+    for name, ver, source in packages:
+        if not runtime_package(name.split(':')[0]):
+            continue
+        up = upstream(ver)
+        bran = branch_of(up)
+        if bran is None:
+            pm = re.search(r'php(\d+)\.(\d+)', name)
+            bran = (int(pm.group(1)), int(pm.group(2))) if pm else None
+        runtimes.append((name, ver, source,
+                         classify(up, branch_built.get(bran), bran in cve_by_branch)))
+    print('1. INSTALLED PHP RUNTIME PACKAGES')
+    table(['Package', 'Version', 'Source', 'Status'], runtimes)
+    print('Status combines the upstream version, the build date of the branch binary and the')
+    print('package changelog. Status wording is explained in the summary.')
+    print('\n2. PHP BINARIES ON THE FILESYSTEM')
+    table(['Binary (symlinks resolved)', 'Version', 'Built', 'Status'],
+          [(real, version, built or '?', status)
+           for real, version, built, bran, status in binaries])
     print('\n3. APACHE: CURRENT CONFIGURATION')
     apache = shutil.which('apache2ctl') or shutil.which('apachectl')
     if apache:
@@ -539,26 +624,17 @@ def main():
     table(['PID', 'Process', 'Executable', 'Note'], processes)
     if stale:
         warnings.append('Processes using replaced/deleted PHP, Apache or nginx files: ' + ', '.join(stale))
-    print('\n8. LOCAL PACKAGE CHANGELOGS: POSSIBLE BACKPORT REFERENCES')
-    print('References only, NOT automatic proof of a security fix. No data is downloaded.')
-    found = False
-    for filename in sorted(glob.glob('/usr/share/doc/*php*/changelog*')):
-        if not os.path.isfile(filename):
-            continue
-        try:
-            if filename.endswith('.gz'):
-                with gzip.open(filename, 'rt', errors='replace') as stream:
-                    text = stream.read(8 * 1024 * 1024)
-            else:
-                text = Path(filename).read_text(errors='replace')[:8 * 1024 * 1024]
-            hits = [cve for cve in CVES if cve in text]
-            if hits:
-                found = True
-                print('  {}: {}'.format(filename, ', '.join(hits)))
-        except (OSError, EOFError) as e:
-            warnings.append('Unable to read changelog: ' + filename)
-    if not found:
+    print('\n8. LOCAL PACKAGE CHANGELOGS: VENDOR BACKPORT EVIDENCE')
+    print('A CVE named here is the vendor stating this package carries the fix. No downloads.')
+    for filename, hits in cve_hits:
+        print('  {}: {}'.format(filename, ', '.join(hits)))
+    if not cve_hits:
         print('  No references to the CVEs found in locally available PHP changelogs.')
+        print('  Absence is not evidence: changelogs are often truncated to the latest entries,')
+        print('  and /usr/share/doc may be stripped entirely on minimal or container images.')
+    else:
+        print('  Branches confirmed by changelog: ' + ', '.join(
+            '{}.{}'.format(*b) for b in sorted(cve_by_branch)))
     print('Vendor advisories: https://ubuntu.com/security/CVE-2026-109618')
     print('                  https://ubuntu.com/security/CVE-2026-109619')
     print('Compare the complete Ubuntu package version, including its Ubuntu revision, against both advisories.')
@@ -572,8 +648,20 @@ def main():
         len(set(r[4] for r in old_vhosts)), total_vhosts, len(unknown_vhosts)))
     print('nginx HTTP server blocks using PHP <= 8.1: {} of {} | FastCGI version unknown: {} | reverse-proxy: {}'.format(
         len(set(r[4] for r in nginx_old)), nginx_total, len(nginx_unknown), len(nginx_proxied)))
-    print('PATCHED: installed version meets the upstream fixed version.')
-    print('BELOW FIX / OLD: a vendor backport may exist, but has not been confirmed by this check.')
+    eol_ok = [row for row in runtimes if row[3].startswith('PATCHED') and row[3].endswith('/ EOL')]
+    if eol_ok:
+        print('Patched but end-of-life: {} runtime package(s) - fixed for these two CVEs, but the'.format(
+            len(eol_ok)))
+        print('  branch gets nothing from upstream again. Migrate to 8.2 or newer.')
+    print('PATCHED: upstream version meets the fixed version.')
+    print('PATCHED (BACKPORT): the package changelog names the CVEs - vendor-confirmed fix,')
+    print('  which is how Ubuntu ships one: the upstream version stays unchanged.')
+    print('NOT PATCHED: the binary was built before {} and therefore cannot contain the'.format(PHP_FIX_DATE))
+    print('  fix. This is a certainty, not a suspicion.')
+    print('REBUILT AFTER FIX / UNCONFIRMED: built on or after {}, so a backport is'.format(PHP_FIX_DATE))
+    print('  plausible but unproven. Check the Ubuntu advisories below for the exact revision.')
+    print('BELOW FIX / OLD / CHECK BACKPORT: no build date and no changelog entry, nothing confirmed.')
+    print('"/ EOL" marks branches 8.1 and older: even once fixed they receive no future fixes.')
     print('This is not an overall statement that the server is secure: running workers may still use old files.')
     print('Process checks detect common replaced files but do not prove that all services have restarted.')
     print('No exploit or HTTP tests. Docker, remote FPM backends and arbitrary custom paths are not fully covered.')
@@ -587,7 +675,7 @@ def main():
     if not runtimes and not binaries:
         print('No PHP runtime found; this does not prove PHP is absent.')
         return 2
-    return 1 if old_vhosts or unknown_vhosts or nginx_old or nginx_unknown or nginx_proxied or stale or module_uncertain or any(row[3] != 'PATCHED' for row in runtimes) or any(row[2] != 'PATCHED' for row in binaries) else 0
+    return 1 if old_vhosts or unknown_vhosts or nginx_old or nginx_unknown or nginx_proxied or stale or module_uncertain or any(not patched(row[3]) for row in runtimes) or any(not patched(row[4]) for row in binaries) else 0
 if __name__ == '__main__':
     try:
         sys.exit(main())
