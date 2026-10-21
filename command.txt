@@ -1,0 +1,5 @@
+Plesk
+curl -fsSL https://raw.githubusercontent.com/Skittel/php-patchkit/main/plesk-php-security-check.sh -o /tmp/plesk-php-security-check.sh && bash /tmp/plesk-php-security-check.sh
+
+Ubuntu LAMP
+curl -fsSL https://raw.githubusercontent.com/Skittel/php-patchkit/main/ubuntu-lamp-php-security-check.sh -o /tmp/ubuntu-lamp-php-security-check.sh && bash /tmp/ubuntu-lamp-php-security-check.sh
