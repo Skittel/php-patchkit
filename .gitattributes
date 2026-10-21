@@ -1,0 +1,7 @@
+# Shell scripts are downloaded and executed on Linux hosts.
+# CRLF would break the shebang with: bad interpreter: /usr/bin/env bash^M
+*.sh text eol=lf
+
+# Keep documentation and the command snippets normalised as well.
+*.md text eol=lf
+*.txt text eol=lf
