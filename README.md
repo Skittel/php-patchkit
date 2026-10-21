@@ -1,4 +1,4 @@
-# PHP Update Toolkit 1.01
+# PHP Update Toolkit 1.10
 
 A collection of practical scripts, tools, and guides to help administrators manage PHP updates, security patches, and related issues.
 
@@ -27,6 +27,21 @@ is an upgrade to 8.2 or newer — this is precisely why the scripts report PHP 8
 and older separately. Distribution vendors may ship backports that keep the old
 version number, so a version check alone cannot confirm a backport — verify
 against your vendor's advisory.
+
+**Plesk servers are a special case.** Plesk rebuilt its EOL branches with the
+**same version number** and only a newer build date — 7.4.33, 8.0.30 and 8.1.34
+built **on or after 21 October 2026** contain the fixes. A version comparison
+therefore proves nothing on those branches; only the build date does:
+
+```bash
+/opt/plesk/php/7.4/bin/php -v | head -1
+# PHP 7.4.33 (cli) (built: Oct 21 2026 08:04:57) (NTS)   <- patched
+```
+
+Branches 7.3 and older get no Plesk fix at all — TuxCare ELS or an upgrade. And
+the panel's own PHP (`sw-engine`) is fixed by a separate Plesk hotfix,
+18.0.80 #11 or 18.0.81 #4, not by a PHP package. `plesk-php-security-check.sh`
+checks all three: upstream versions, EOL build dates, and the panel.
 
 Every SAPI serving web requests is affected (PHP-FPM, mod_php, php-cgi,
 FrankenPHP, LiteSpeed). Risk is highest with mod_php, where unauthenticated
@@ -58,6 +73,7 @@ attacker to change. Treat them as a cheap first look, not as a verdict.
 - [php.net release archive 2026](https://www.php.net/archive/2026.php) — official announcements and fixed versions
 - [CERT-EU Security Advisory 2026-018](https://cert.europa.eu/publications/security-advisories/2026-018/) — advisory and mitigation guidance
 - [watchTowr: CVE-2026-109618 FAQ](https://watchtowr.com/intelligence/php-cve-2026-109618-faq/) — technical analysis
+- [Plesk KB: CVE-2026-109618 & CVE-2026-109619](https://support.plesk.com/hc/en-us/articles/44397729587351) - Plesk-shipped PHP, EOL rebuild dates and sw-engine hotfixes
 - [administrator.de overview](https://administrator.de/info/php-kritische-rce-luecken-cve-2026-109618-notfall-release-679311.html) — German-language summary
 
 ## What's Included
