@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# php-patchkit 1.00 — https://github.com/Skittel/php-patchkit
+# php-patchkit 1.00 - https://github.com/Skittel/php-patchkit
 # Read-only Ubuntu Apache/nginx inventory for CVE-2026-109618 / CVE-2026-109619.
 # No updates, restarts, configuration changes, network access or web test files.
 # Run as root: bash ubuntu-lamp-php-security-check.sh
@@ -14,6 +14,7 @@ import datetime
 import fnmatch
 import glob
 import gzip
+import io
 import os
 import re
 import shutil
@@ -22,6 +23,15 @@ import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
+# Report output must survive any server locale. Handler paths, package names
+# and IDN domain names can carry non-ASCII bytes, and on a latin-1 or ascii
+# stdout a single one of them would abort the audit with UnicodeEncodeError
+# halfway through the report.
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except AttributeError:  # Python 3.6
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8',
+                                  errors='replace', line_buffering=True)
 FIXES = {(8, 2): 35, (8, 3): 36, (8, 4): 27, (8, 5): 12}
 CVES = ('CVE-2026-109618', 'CVE-2026-109619')
 VERSION = '1.00'
@@ -372,7 +382,7 @@ def main():
         if '=' in line:
             k, v = line.split('=', 1)
             release[k] = v.strip('"')
-    print('Ubuntu Apache/nginx PHP Security Check {} — read-only'.format(VERSION))
+    print('Ubuntu Apache/nginx PHP Security Check {} - read-only'.format(VERSION))
     print('Host: {} | Checked at: {}'.format(socket.getfqdn(), datetime.datetime.now().astimezone().isoformat()))
     print('OS: ' + release.get('PRETTY_NAME', '?'))
     print('CVEs: ' + ' / '.join(CVES))
