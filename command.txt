@@ -10,3 +10,4 @@ sudo apt update && sudo apt upgrade -y && sudo reboot
 Plesk Keyring update
 cp -a /etc/apt/keyrings/plesk.gpg /etc/apt/keyrings/plesk.gpg.bak && curl -fsSL https://autoinstall.plesk.com/plesk.gpg | gpg --dearmor >> /etc/apt/keyrings/plesk.gpg
 
+plesk installer update
