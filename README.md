@@ -109,6 +109,45 @@ The scripts in this repository are read-only inventories for exactly these two
 CVEs — they report affected handlers, websites and subscriptions, and flag hosts
 still running PHP 8.1 or older. They do not patch, restart or exploit anything.
 
+### Raising the PHP version of old websites
+
+`plesk-php-migrate.sh` moves Plesk websites from an older PHP branch to a newer
+one. **It is the only script here that writes** — everything else is a read-only
+inventory. It performs a dry run unless `--apply` is given.
+
+```bash
+bash plesk-php-migrate.sh --target 7.4              # show what would change
+bash plesk-php-migrate.sh --target 7.4 --only a.de  # try one website first
+bash plesk-php-migrate.sh --target 7.4 --apply      # perform the changes
+bash plesk-php-migrate.sh --rollback /var/log/plesk-php-migrate-<stamp>.tsv --apply
+```
+
+The target branch is a parameter, so the same mechanism serves the emergency
+move to a patched EOL branch today and the real migration to 8.2+ later. By
+default every website below the target is selected; `--below` narrows that.
+
+What it guarantees:
+
+- **Never a downgrade.** A website already on the target branch or newer is
+  skipped, whatever the flags say.
+- **Handler type is preserved.** `fpm` stays `fpm`, `fastcgi` stays `fastcgi`,
+  `fpm-dedicated` stays `fpm-dedicated`. Where no type-preserving target exists
+  the website is reported as blocked rather than quietly served differently —
+  for example `mod_php`, which Plesk does not ship for its own PHP builds.
+- **A rollback file before the first change.** Written to `/var/log`, listing
+  each website with its previous handler. If it cannot be written, nothing is
+  changed.
+- **Disabled target handlers are refused**, not attempted.
+
+What it cannot do: if a subscription is locked to a service plan, *Sync with
+plan* can revert the change — raise PHP in the plan for a permanent move.
+Dedicated FPM pool settings and custom `php.ini` values are not carried over,
+and the script does not verify that the new handler actually serves requests.
+Confirm that with `plesk-php-security-check.sh` afterwards.
+
+Compatibility is on you: 7.3 → 7.4 is usually uneventful, 7.0 or 7.1 → 7.4 is
+not. Use `--only` on a few websites and check them before the full batch.
+
 ### Detecting exploit attempts
 
 Public proof-of-concept tooling for these CVEs has been observed sending marker

@@ -11,3 +11,6 @@ Plesk Keyring update
 cp -a /etc/apt/keyrings/plesk.gpg /etc/apt/keyrings/plesk.gpg.bak && curl -fsSL https://autoinstall.plesk.com/plesk.gpg | gpg --dearmor >> /etc/apt/keyrings/plesk.gpg
 
 plesk installer update
+
+Plesk: raise PHP version of old websites (dry run)
+curl -fsSL https://raw.githubusercontent.com/Skittel/php-patchkit/main/plesk-php-migrate.sh -o /tmp/plesk-php-migrate.sh && bash /tmp/plesk-php-migrate.sh --target 7.4
