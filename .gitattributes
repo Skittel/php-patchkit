@@ -5,3 +5,6 @@
 # Keep documentation and the command snippets normalised as well.
 *.md text eol=lf
 *.txt text eol=lf
+
+# This file, too.
+.gitattributes text eol=lf
