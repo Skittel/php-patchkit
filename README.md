@@ -1,4 +1,4 @@
-# PHP Update Toolkit 1.11
+# PHP Update Toolkit 1.12
 
 A collection of practical scripts, tools, and guides to help administrators manage PHP updates, security patches, and related issues.
 

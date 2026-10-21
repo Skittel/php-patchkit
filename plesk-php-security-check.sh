@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# php-patchkit 1.11 - https://github.com/Skittel/php-patchkit
+# php-patchkit 1.12 - https://github.com/Skittel/php-patchkit
 # Read-only inventory for CVE-2026-109618 and CVE-2026-109619.
 # Requirements: Linux, root, Plesk, Bash, Python >= 3.6. No network requests.
 # Run: bash plesk-php-security-check.sh
@@ -40,7 +40,7 @@ PANEL_FIX = {'18.0.80': 11, '18.0.81': 4}
 PANEL_PHP = '/usr/local/psa/admin/bin/php'
 SOURCE = 'https://www.php.net/archive/2026.php'
 PLESK_KB = 'https://support.plesk.com/hc/en-us/articles/44397729587351'
-VERSION = '1.11'
+VERSION = '1.12'
 errors = []
 
 def run(args, timeout=90):
@@ -186,8 +186,10 @@ for line in out.splitlines():
     sites.append(row)
     usage[hid].append(row)
 print('1. ALL REGISTERED PHP HANDLERS')
-table(['Handler', 'Plesk', 'Binary', 'Built', 'Enabled', 'Websites', 'Status'],
-      [(h['id'], h['registered'], h['actual'], h['built'] or '?', h['enabled'],
+def on_off(v):
+    return {'enabled': 'yes', 'disabled': 'no'}.get(v, v)
+table(['Handler', 'Binary', 'Built', 'On', 'Sites', 'Status'],
+      [(h['id'], h['actual'], h['built'] or '?', on_off(h['enabled']),
         len(usage[h['id']]), h['status'])
        for h in sorted(handlers.values(), key=lambda h: h['id'])])
 print('\nPATCHED = handler binary meets the upstream fixed version and the branch is supported.')
@@ -197,13 +199,34 @@ print('  these without changing the version number, so the build date is the onl
 print('  Fixed for today - no further upstream fixes will ever arrive. Plan the move to 8.2+.')
 print('EOL / NOT PATCHED = Plesk rebuild exists but is not installed. Update and restart.')
 print('EOL / NO PLESK FIX = 7.3 or older; Plesk ships nothing, TuxCare ELS or upgrade needed.')
-print('Disabled handlers are also checked. PHP-disabled websites are excluded from usage counts.\n')
+print('Disabled handlers are also checked. PHP-disabled websites are excluded from usage counts.')
+# The registered version is dropped from the table above to keep it readable; it
+# only matters where it disagrees with the binary, so report just those.
+mismatch = [h for h in handlers.values()
+            if h['actual'] != '?' and not h['actual'].startswith(h['registered'])]
+if mismatch:
+    print('\nPlesk registry disagrees with the installed binary for {} handler(s). The binary'.format(
+        len(mismatch)))
+    print('is authoritative - the registry lags behind until "plesk installer update" runs,')
+    print('so the Plesk UI shows the stale number:')
+    for h in sorted(mismatch, key=lambda h: h['id']):
+        print('  {}: registry {}, binary {}'.format(h['id'], h['registered'], h['actual']))
+print()
 print('2. WEBSITES AND SUBSCRIPTIONS WITHOUT A CONFIRMED FIX (INCLUDING SUSPENDED)')
 affected = [s for s in sites if not patched(handlers.get(s['hid'], {}).get('status', ''))]
-table(['Subscription', 'Website', 'System user', 'Handler', 'Status', 'Domain state'],
-      [(s['sub'], s['domain'], s['user'], s['hid'],
+table(['Subscription', 'Website', 'Handler', 'Status', 'State'],
+      [(s['sub'], s['domain'], s['hid'],
         handlers.get(s['hid'], {}).get('status', 'HANDLER MISSING'), s['state']) for s in affected])
-print('Domain state 0 = active; other values represent Plesk suspension status/bitmasks.')
+# The system user matches the subscription name for most entries, so carrying a
+# full column for it doubled the table width for the few that differ. List the
+# exceptions instead - nothing is lost and the table stays readable.
+odd_users = sorted({(s['sub'], s['user']) for s in affected if s['user'] != s['sub']})
+if odd_users:
+    print('System user differs from the subscription name for {} subscription(s):'.format(
+        len(odd_users)))
+    for sub, user in odd_users:
+        print('  {} -> {}'.format(sub, user))
+print('State 0 = active; other values represent Plesk suspension status/bitmasks.')
 print('Suspended websites remain listed to account for possible reactivation.\n')
 # Report each subscription using PHP 8.1 or older, including addon domains.
 # Prefer the executed binary version; use Plesk's registered version only
@@ -224,11 +247,12 @@ for site in sites:
     if branch is not None:
         legacy.append((site, branch, source))
 print('3. SUBSCRIPTIONS USING PHP 8.1 OR OLDER (INCLUDING SUSPENDED)')
-table(['Subscription', 'Website', 'PHP', 'Handler', 'Built', 'Status', 'Version source'],
+table(['Subscription', 'Website', 'PHP', 'Handler', 'Built', 'Status', 'Src'],
       [(site['sub'], site['domain'], branch, site['hid'],
         handlers[site['hid']]['built'] or '?', handlers[site['hid']]['status'],
-        'binary' if source == 'actual' else 'Plesk (fallback)')
+        'bin' if source == 'actual' else 'plesk')
        for site, branch, source in sorted(legacy, key=lambda x: (x[0]['sub'], x[0]['domain']))])
+print('Src = where the version came from: bin = executed binary, plesk = Plesk registry fallback.')
 print('Subscriptions: {} | Websites: {}'.format(len({s['sub'] for s, _, _ in legacy}), len(legacy)))
 legacy_unpatched = [x for x in legacy if not patched(handlers[x[0]['hid']]['status'])]
 print('Of those without a confirmed fix: {} websites in {} subscriptions'.format(
@@ -276,25 +300,32 @@ if os.path.isfile(PANEL_PHP) and os.access(PANEL_PHP, os.X_OK):
         errors.append('Unable to read panel PHP version: ' + (err or out[:150]))
 else:
     errors.append('Panel PHP binary not found or not executable: ' + PANEL_PHP)
+# Two independent signals. The panel update level is what Plesk documents as the
+# fix vehicle, but it is a proxy; the panel PHP version is the direct measure.
+# Both must say fixed - if either says otherwise, nothing is confirmed.
+hotfix_ok = None
 if panel_base in PANEL_FIX:
     need = PANEL_FIX[panel_base]
-    if panel_upd >= need:
-        panel_status = 'PATCHED'
-        panel_reason = 'Update #{} meets the required hotfix #{}'.format(panel_upd, need)
-    else:
-        panel_status = 'NOT PATCHED'
-        panel_reason = ('Update #{} is below the required hotfix #{}; it may not be released '
-                        'yet - check the Plesk KB and run plesk installer'.format(panel_upd, need))
+    hotfix_ok = panel_upd >= need
+    hotfix_note = 'panel update #{} vs required hotfix #{}'.format(panel_upd, need)
 elif panel_base:
-    panel_status = 'UNKNOWN'
-    panel_reason = ('Panel version {} is not covered by this matrix (documented: {})'.format(
-        panel_base, ', '.join('{}#{}'.format(k, v) for k, v in sorted(PANEL_FIX.items()))))
+    hotfix_note = 'panel version {} not covered by this matrix (documented: {})'.format(
+        panel_base, ', '.join('{}#{}'.format(k, v) for k, v in sorted(PANEL_FIX.items())))
+else:
+    hotfix_note = 'panel version could not be determined'
+php_status, php_reason = version_status(panel_ver, panel_built, PANEL_PHP)
+php_ok = None if panel_ver == '?' else patched(php_status)
+if hotfix_ok and php_ok:
+    panel_status = 'PATCHED'
+elif hotfix_ok is False or php_ok is False:
+    panel_status = 'NOT PATCHED'
 else:
     panel_status = 'UNKNOWN'
-    panel_reason = 'Panel version could not be determined'
+panel_reason = '{} | panel PHP {} -> {}'.format(hotfix_note, panel_ver, php_status)
 print('Panel version: {}'.format(panel_raw))
 print('Panel PHP: {} | Built: {} | Binary: {}'.format(panel_ver, panel_built or '?', PANEL_PHP))
 print('Status: {} | {}'.format(panel_status, panel_reason))
+print('Panel PHP verdict: {} | {}'.format(php_status, php_reason))
 print('Required sw-engine hotfixes: ' + ', '.join(
     '{} Update #{}'.format(k, v) for k, v in sorted(PANEL_FIX.items())))
 print('The panel is reachable without authentication on its own port, so an unpatched')
