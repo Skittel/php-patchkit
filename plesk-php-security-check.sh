@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# php-patchkit 1.10 - https://github.com/Skittel/php-patchkit
+# php-patchkit 1.11 - https://github.com/Skittel/php-patchkit
 # Read-only inventory for CVE-2026-109618 and CVE-2026-109619.
 # Requirements: Linux, root, Plesk, Bash, Python >= 3.6. No network requests.
 # Run: bash plesk-php-security-check.sh
@@ -40,7 +40,7 @@ PANEL_FIX = {'18.0.80': 11, '18.0.81': 4}
 PANEL_PHP = '/usr/local/psa/admin/bin/php'
 SOURCE = 'https://www.php.net/archive/2026.php'
 PLESK_KB = 'https://support.plesk.com/hc/en-us/articles/44397729587351'
-VERSION = '1.10'
+VERSION = '1.11'
 errors = []
 
 def run(args, timeout=90):
@@ -104,10 +104,12 @@ def version_status(v, built, binary):
             return ('UNKNOWN', 'EOL branch; build date unreadable, so the Plesk rebuild '
                     'cannot be confirmed')
         if built >= PLESK_FIX_DATE:
-            return ('PATCHED (PLESK EOL REBUILD)', 'Built {}, on or after the Plesk rebuild '
-                    'date {}'.format(built, PLESK_FIX_DATE))
+            return ('PATCHED / EOL', 'Built {}, on or after the Plesk rebuild date {}: both '
+                    'CVEs are closed, but the branch stays end-of-life and will receive no '
+                    'further upstream fixes'.format(built, PLESK_FIX_DATE))
         return ('EOL / NOT PATCHED', 'Built {}, before the Plesk rebuild date {}; install the '
-                'rebuilt package via plesk installer'.format(built, PLESK_FIX_DATE))
+                'rebuilt package via apt/dnf or plesk installer, then restart the PHP-FPM '
+                'pools'.format(built, PLESK_FIX_DATE))
     if (major, minor) <= (7, 3):
         return ('EOL / NO PLESK FIX', 'Plesk ships no fix for this branch; TuxCare ELS or an '
                 'upgrade to a supported branch is required')
@@ -188,11 +190,12 @@ table(['Handler', 'Plesk', 'Binary', 'Built', 'Enabled', 'Websites', 'Status'],
       [(h['id'], h['registered'], h['actual'], h['built'] or '?', h['enabled'],
         len(usage[h['id']]), h['status'])
        for h in sorted(handlers.values(), key=lambda h: h['id'])])
-print('\nPATCHED = handler binary meets the upstream fixed version.')
-print('PATCHED (PLESK EOL REBUILD) = 7.4.33/8.0.30/8.1.34 from /opt/plesk/php built on or')
-print('  after {}. These branches keep their version number, so the build date is the'.format(PLESK_FIX_DATE))
-print('  only proof - still EOL and without future upstream fixes.')
-print('EOL / NOT PATCHED = Plesk rebuild available but not installed. Run plesk installer.')
+print('\nPATCHED = handler binary meets the upstream fixed version and the branch is supported.')
+print('PATCHED / EOL = both CVEs closed, but the branch is end-of-life. Applies to 7.4.33,')
+print('  8.0.30 and 8.1.34 from /opt/plesk/php built on or after {}. Plesk rebuilt'.format(PLESK_FIX_DATE))
+print('  these without changing the version number, so the build date is the only proof.')
+print('  Fixed for today - no further upstream fixes will ever arrive. Plan the move to 8.2+.')
+print('EOL / NOT PATCHED = Plesk rebuild exists but is not installed. Update and restart.')
 print('EOL / NO PLESK FIX = 7.3 or older; Plesk ships nothing, TuxCare ELS or upgrade needed.')
 print('Disabled handlers are also checked. PHP-disabled websites are excluded from usage counts.\n')
 print('2. WEBSITES AND SUBSCRIPTIONS WITHOUT A CONFIRMED FIX (INCLUDING SUSPENDED)')
@@ -316,6 +319,13 @@ print('PHP-enabled websites: {} | without confirmed fix: {} | affected subscript
     len(sites), len(affected), len({s['sub'] for s in affected})))
 print('PHP 8.1 or older: {} websites in {} subscriptions ({} without a confirmed fix)'.format(
     len(legacy), len({s['sub'] for s, _, _ in legacy}), len(legacy_unpatched)))
+eol_ok = [h for h in handlers.values() if h['status'] == 'PATCHED / EOL']
+eol_sites = [s for s in sites if handlers.get(s['hid'], {}).get('status') == 'PATCHED / EOL']
+print('Patched but end-of-life: {} handlers, {} websites, {} subscriptions{}'.format(
+    len(eol_ok), len(eol_sites), len({s['sub'] for s in eol_sites}),
+    ' (' + ', '.join(sorted({h['actual'] for h in eol_ok})) + ')' if eol_ok else ''))
+print('  Those are fixed for these two CVEs only. The next PHP vulnerability will not be')
+print('  fixed for them, so they still need to move to 8.2 or newer.')
 print('Plesk panel (sw-engine): {} | {}'.format(panel_status, panel_raw))
 print('IMPORTANT: For 7.4/8.0/8.1 the version number is identical before and after the fix;')
 print('this check relies on the build date reported by the binary itself.')

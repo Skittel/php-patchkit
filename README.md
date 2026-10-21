@@ -1,4 +1,4 @@
-# PHP Update Toolkit 1.10
+# PHP Update Toolkit 1.11
 
 A collection of practical scripts, tools, and guides to help administrators manage PHP updates, security patches, and related issues.
 
@@ -22,11 +22,13 @@ why 8.2, 8.3, 8.4 and 8.5 received the releases above. No further patch is
 planned for any older branch.
 
 **Every host still running PHP 8.1 or older is therefore problematic: those
-branches are end-of-life and will not be fixed.** For them the only real remedy
-is an upgrade to 8.2 or newer — this is precisely why the scripts report PHP 8.1
-and older separately. Distribution vendors may ship backports that keep the old
-version number, so a version check alone cannot confirm a backport — verify
-against your vendor's advisory.
+branches get nothing from upstream, now or later.** Some vendors do backport —
+Plesk rebuilt 7.4, 8.0 and 8.1 for these two CVEs, see below — but a backport
+closes one advisory, it does not restore support. The next vulnerability will
+land on an unmaintained branch again, so an upgrade to 8.2 or newer stays the
+only durable remedy, and that is why the scripts report 8.1 and older
+separately. Backports also commonly keep the old version number, so a version
+check alone cannot confirm one — verify against your vendor's advisory.
 
 **Plesk servers are a special case.** Plesk rebuilt its EOL branches with the
 **same version number** and only a newer build date — 7.4.33, 8.0.30 and 8.1.34
@@ -38,10 +40,45 @@ therefore proves nothing on those branches; only the build date does:
 # PHP 7.4.33 (cli) (built: Oct 21 2026 08:04:57) (NTS)   <- patched
 ```
 
-Branches 7.3 and older get no Plesk fix at all — TuxCare ELS or an upgrade. And
-the panel's own PHP (`sw-engine`) is fixed by a separate Plesk hotfix,
-18.0.80 #11 or 18.0.81 #4, not by a PHP package. `plesk-php-security-check.sh`
-checks all three: upstream versions, EOL build dates, and the panel.
+Those builds are **patched but still end-of-life.** `plesk-php-security-check.sh`
+reports them as `PATCHED / EOL`, and the distinction matters: these two CVEs are
+closed, but the branch receives no further upstream fixes, so the next PHP
+vulnerability will not be patched for them. Fixed today is not the same as
+supported. Moving to 8.2 or newer remains the real remedy.
+
+Branches **7.3 and older get no Plesk fix at all** (`EOL / NO PLESK FIX`) —
+TuxCare Extended Lifecycle Support or an upgrade. And the panel's own PHP
+(`sw-engine`) is fixed by a separate Plesk hotfix, **18.0.80 #11** or
+**18.0.81 #4**, not by a PHP package. The script checks all three: upstream
+versions, EOL build dates, and the panel.
+
+### Installing the Plesk updates
+
+The rebuilt packages arrive through Plesk's own repository, so the normal
+distribution update path works:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+
+If `apt` or `dnf` does not offer the `plesk-php*` packages, or fails with
+`public key for <package> not installed`, the Plesk installer fetches the
+required repository keys itself:
+
+```bash
+plesk installer update
+```
+
+**A reboot is not required, but the services are.** PHP-FPM pools and Apache
+keep serving requests from already-running workers, which still hold the old
+code. Confirm afterwards that the processes were actually replaced:
+
+```bash
+/opt/plesk/php/7.4/bin/php -v | head -1     # build date
+/usr/local/psa/admin/bin/php -v | head -1   # panel PHP
+plesk version | head -2                     # panel hotfix level
+pgrep -a php-fpm                            # restarted workers
+```
 
 Every SAPI serving web requests is affected (PHP-FPM, mod_php, php-cgi,
 FrankenPHP, LiteSpeed). Risk is highest with mod_php, where unauthenticated
