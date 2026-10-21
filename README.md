@@ -28,4 +28,4 @@ Feel free to open a GitHub issue, submit a pull request, or contact me directly:
 
 ## License
 
-This project is intended to be freely available for everyone. See the LICENSE file for the applicable license terms.
+This project is intended to be freely available for everyone.
